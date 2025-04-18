@@ -1,13 +1,114 @@
+/* Cyberpunk Global Styles */
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  padding: 0;
+  background-color: #0b0b18;
+  font-family: 'Rajdhani', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  color: #ffffff;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
+
+::-webkit-scrollbar-track {
+  background: #12121f;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00f9ff;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00c8cc;
+  box-shadow: 0 0 8px rgba(0, 249, 255, 0.8);
+}
+
+/* Cyberpunk animations */
+@keyframes glitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(-2px, -2px); }
+  60% { transform: translate(2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+  100% { transform: translate(0); }
+}
+
+@keyframes flicker {
+  0% { opacity: 1; }
+  50% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+@keyframes glow {
+  0% { text-shadow: 0 0 5px rgba(0, 249, 255, 0.7); }
+  50% { text-shadow: 0 0 20px rgba(0, 249, 255, 0.9), 0 0 30px rgba(0, 249, 255, 0.5); }
+  100% { text-shadow: 0 0 5px rgba(0, 249, 255, 0.7); }
+}
+
+/* Style classes that can be used in components */
+.cyber-border {
+  position: relative;
+}
+
+.cyber-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  padding: 1px;
+  background: linear-gradient(120deg, #00f9ff, #ff0096);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.cyber-text {
+  background: linear-gradient(90deg, #00f9ff, #ff0096);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 8px rgba(0, 249, 255, 0.5);
+}
+
+.cyber-panel {
+  background-image: linear-gradient(135deg, rgba(18, 18, 31, 0.95) 0%, rgba(26, 26, 46, 0.95) 100%);
+  border-radius: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.19), 0 6px 6px rgba(0, 0, 0, 0.23), 0 0 10px rgba(0, 249, 255, 0.1);
+  position: relative;
+}
+
+.cyber-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 249, 255, 0.5), transparent);
+.glitch-text {
+  position: relative;
+  animation: glitch 200ms linear infinite;
+  animation-play-state: paused;
+  will-change: transform;
+}
+  animation-play-state: paused;
+}
+
+.glitch-text:hover {
+.neon-glow {
+  animation: glow 2s ease-in-out infinite;
+  will-change: text-shadow;
+}
+.neon-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+}
+/* Add to index.js to import these styles */
