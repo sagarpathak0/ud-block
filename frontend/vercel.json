@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "build": {
+    "env": {
+      "REACT_APP_BUDGET_MANAGER_ADDRESS": "@react_app_budget_manager_address",
+      "REACT_APP_MICRO_LENDING_ADDRESS": "@react_app_micro_lending_address",
+      "REACT_APP_MICRO_INVESTOR_ADDRESS": "@react_app_micro_investor_address",
+      "REACT_APP_TEST_TOKEN_ADDRESS": "@react_app_test_token_address"
+    }
+  }
+}

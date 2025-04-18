@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ethers } from 'ethers'; // Add this import
 import { 
   Typography, Tabs, Tab, Box, Card, CardContent, 
   Button, TextField, Grid, CircularProgress, 
@@ -12,6 +13,35 @@ function InclusiveBanking({ contractService }) {
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+  };
+
+  const debugContract = async () => {
+    try {
+      // Get contract info
+      const microLendingAddress = await contractService.contracts.microLending.getAddress();
+      console.log("MicroLending contract:", microLendingAddress);
+      
+      // Get available functions
+      console.log("Available functions:", 
+        contractService.contracts.microLending.interface.fragments
+          .filter(f => f.type === 'function')
+          .map(f => `${f.name}(${f.inputs.map(i => i.type).join(',')})`)
+      );
+      
+      // Try to call a simpler view function first
+      const userAddress = await contractService.signer.getAddress();
+      console.log("Current user:", userAddress);
+      
+      // Try to debug the offerLoan function specifically
+      console.log("Debugging offerLoan function:", 
+        contractService.contracts.microLending.interface.getFunction("offerLoan")
+      );
+      
+      alert("Check console for debug information");
+    } catch (error) {
+      console.error("Debug error:", error);
+      alert("Debug error: " + error.message);
+    }
   };
 
   return (
@@ -29,6 +59,15 @@ function InclusiveBanking({ contractService }) {
       {tabValue === 0 && <MicroLoansTab contractService={contractService} />}
       {tabValue === 1 && <CommunitySavingsTab contractService={contractService} />}
       {tabValue === 2 && <FinancialEducationTab contractService={contractService} />}
+
+      <Button
+        variant="outlined"
+        color="warning"
+        onClick={debugContract}
+        sx={{ mt: 2 }}
+      >
+        Debug Contract
+      </Button>
     </div>
   );
 }
@@ -48,15 +87,19 @@ function MicroLoansTab({ contractService }) {
   const hasLoadedRef = React.useRef(false); // track if we've loaded once
   const [userAddress, setUserAddress] = useState(''); // Track user address
 
-  // Load loans
+  const isLoadingRef = useRef(false);
+  const initialLoadDone = useRef(false);
+
+  // Modify your loadLoans function to prevent recursive calls
   const loadLoans = useCallback(async () => {
+    if (isLoadingRef.current) return; // Prevent concurrent calls
+    
     try {
       console.log("Loading loans...");
       setLoading(true);
       
-      if (!contractService?.microLending) {
-        console.log("MicroLending contract not initialized yet, will retry in 1s");
-        setTimeout(loadLoans, 1000);
+      if (!contractService?.contracts?.microLending) {
+        console.log("MicroLending contract not initialized yet");
         return;
       }
 
@@ -146,6 +189,24 @@ function MicroLoansTab({ contractService }) {
       setLastRefresh(new Date()); // Update refresh timestamp
     }
   }, [contractService]);
+
+  // Replace your useEffect with this:
+  // Load loans when component mounts
+  useEffect(() => {
+    // Only load if contract is available and not already loading
+    if (contractService && !initialLoadDone.current && !isLoadingRef.current) {
+      const fetchData = async () => {
+        isLoadingRef.current = true;
+        try {
+          await loadLoans();
+          initialLoadDone.current = true;
+        } finally {
+          isLoadingRef.current = false;
+        }
+      };
+      fetchData();
+    }
+  }, [contractService]); // Only depend on contractService
 
   // Function to create a loan
   async function handleOfferLoan() {
@@ -289,13 +350,6 @@ function MicroLoansTab({ contractService }) {
       setLoading(false);
     }
   }
-
-  // Load loans when component mounts
-  useEffect(() => {
-    if (!contractService || hasLoadedRef.current) return;
-    hasLoadedRef.current = true; // mark as loaded
-    loadLoans();
-  }, [contractService, loadLoans]);
 
   return (
     <>
@@ -449,6 +503,47 @@ function MicroLoansTab({ contractService }) {
         sx={{ ml: 2 }}
       >
         Debug Loan Functions
+      </Button>
+
+      <Button
+        variant="contained"
+        color="warning"
+        onClick={async () => {
+          try {
+            // Get the contract interface
+            const iface = contractService.contracts.microLending.interface;
+            
+            // Analyze offerLoan function signature
+            const offerLoanFunc = iface.getFunction('offerLoan');
+            console.log("offerLoan function signature:", offerLoanFunc);
+            console.log("Parameter types:", offerLoanFunc.inputs);
+            
+            // Try to build transaction data manually
+            const testAmount = ethers.parseEther("1");
+            const testInterestRate = 50; // 0.5%
+            const testDuration = 30 * 24 * 60 * 60; // 30 days in seconds
+            
+            const data = iface.encodeFunctionData("offerLoan", [
+              testAmount,
+              testInterestRate,
+              testDuration
+            ]);
+            
+            console.log("Encoded function call:", data);
+            
+            // Get token contract details
+            const tokenAddress = await contractService.contracts.testToken.getAddress();
+            console.log("Token contract address:", tokenAddress);
+            
+            alert("Contract analysis complete. Check console for details.");
+          } catch (error) {
+            console.error("Analysis error:", error);
+            alert("Error analyzing contract: " + error.message);
+          }
+        }}
+        sx={{ mt: 2, ml: 2 }}
+      >
+        Analyze Contract
       </Button>
 
       <Typography variant="h6" sx={{ mt: 4, mb: 2 }}>

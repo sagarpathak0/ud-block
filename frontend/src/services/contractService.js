@@ -4,12 +4,12 @@ import MicroLendingABI from '../abis/MicroLending.json';
 import MicroInvestorABI from '../abis/MicroInvestor.json';
 import TestTokenABI from '../abis/TestToken.json'; // Add this import
 
-// Contract addresses - store these in a separate config file for different networks
+// Replace your hardcoded ADDRESSES with:
 const ADDRESSES = {
-  budgetManager: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-  microLending: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
-  microInvestor: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-  testToken: "0x5FbDB2315678afecb367f032d93F642f64180aa3" // Add this line
+  budgetManager: process.env.REACT_APP_BUDGET_MANAGER_ADDRESS,
+  microLending: process.env.REACT_APP_MICRO_LENDING_ADDRESS,
+  microInvestor: process.env.REACT_APP_MICRO_INVESTOR_ADDRESS,
+  testToken: process.env.REACT_APP_TEST_TOKEN_ADDRESS
 };
 
 // Export the class as a named export
@@ -513,6 +513,249 @@ export class ContractService {
       console.error("Error withdrawing investment:", error);
       throw error;
     }
+  }
+
+  /**
+   * Offer a loan on the MicroLending platform using a raw transaction approach
+   */
+  async offerLoan(amount, interestRate, durationDays) {
+    await this.ensureInitializedOrReconnect();
+    
+    try {
+      if (!this.contracts.microLending || !this.contracts.testToken) {
+        throw new Error("Required contracts not initialized");
+      }
+      
+      // 1. Check token balance first
+      const userAddress = await this.signer.getAddress();
+      const tokenBalance = await this.contracts.testToken.balanceOf(userAddress);
+      const amountWei = ethers.parseEther(amount.toString());
+      
+      console.log(`Token balance: ${ethers.formatEther(tokenBalance)}, Trying to offer: ${amount}`);
+      
+      if (tokenBalance < amountWei) {
+        throw new Error(`Insufficient token balance. You have ${ethers.formatEther(tokenBalance)} tokens but trying to offer ${amount}`);
+      }
+      
+      // 2. Reset the token approval to zero first (fixes some token approval issues)
+      console.log("Resetting token approval to zero...");
+      const microLendingAddress = await this.contracts.microLending.getAddress();
+      const resetTx = await this.contracts.testToken.approve(microLendingAddress, 0);
+      await resetTx.wait();
+      
+      // 3. Now approve the exact amount
+      console.log(`Approving ${amount} tokens for transfer...`);
+      const approveTx = await this.contracts.testToken.approve(microLendingAddress, amountWei);
+      const approveReceipt = await approveTx.wait();
+      console.log("Approval confirmed in block:", approveReceipt.blockNumber);
+      
+      // 4. CRITICAL: Verify the approval worked
+      const allowance = await this.contracts.testToken.allowance(userAddress, microLendingAddress);
+      console.log(`Current allowance: ${ethers.formatEther(allowance)}`);
+      
+      if (allowance < amountWei) {
+        throw new Error(`Approval failed. Allowance is ${ethers.formatEther(allowance)} but needed ${amount}`);
+      }
+      
+      // 5. Convert parameters - use very conservative values
+      // Duration in seconds
+      const durationSeconds = durationDays * 24 * 60 * 60;
+      // Interest rate in basis points - hard code to a low value
+      const interestRateBasisPoints = 10; // 0.1% - extremely low for testing
+      
+      console.log(`Offering loan with parameters:`);
+      console.log(`- Amount: ${amount} tokens (${amountWei.toString()} wei)`);
+      console.log(`- Interest: ${interestRateBasisPoints/100}%`);
+      console.log(`- Duration: ${durationDays} days (${durationSeconds} seconds)`);
+      
+      // 6. Create a raw transaction with careful gas parameters
+      const feeData = await this.provider.getFeeData();
+      
+      // Force legacy transaction type to avoid issues
+      const tx = {
+        to: microLendingAddress,
+        value: 0,
+        data: this.contracts.microLending.interface.encodeFunctionData("offerLoan", [
+          amountWei,
+          interestRateBasisPoints,
+          durationSeconds
+        ]),
+        gasLimit: ethers.parseUnits("1000000", "wei"), // Very high limit for safety
+        type: 0, // Legacy transaction type
+        gasPrice: feeData.gasPrice, // Use network gasPrice
+        nonce: await this.provider.getTransactionCount(userAddress)
+      };
+      
+      console.log("Sending transaction with parameters:", tx);
+      
+      // 7. Send and wait with longer timeout
+      const response = await this.signer.sendTransaction(tx);
+      console.log("Transaction sent:", response.hash);
+      
+      const receipt = await response.wait();
+      console.log("Transaction confirmed in block:", receipt.blockNumber);
+      
+      return receipt;
+    } catch (error) {
+      console.error("Error offering loan:", error);
+      
+      // Try to extract more useful error information
+      const errorMsg = error.message || "";
+      if (errorMsg.includes("insufficient funds")) {
+        throw new Error("Insufficient ETH to pay for transaction gas");
+      } else if (errorMsg.includes("user rejected")) {
+        throw new Error("Transaction was rejected in MetaMask");
+      } else {
+        throw new Error("Failed to offer loan. Please make sure you have enough TEST tokens and try with a smaller amount.");
+      }
+    }
+  }
+
+  /**
+   * Take a loan from the MicroLending platform
+   */
+  async takeLoan(loanId) {
+    await this.ensureInitializedOrReconnect();
+    
+    try {
+      if (!this.contracts.microLending) {
+        throw new Error("MicroLending contract not initialized");
+      }
+      
+      console.log(`Taking loan ${loanId}`);
+      const tx = await this.contracts.microLending.takeLoan(loanId);
+      
+      console.log("Take loan transaction submitted:", tx.hash);
+      const receipt = await tx.wait();
+      console.log("Loan taken in block:", receipt.blockNumber);
+      
+      return receipt;
+    } catch (error) {
+      console.error("Error taking loan:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Repay a loan on the MicroLending platform
+   */
+  async repayLoan(loanId) {
+    await this.ensureInitializedOrReconnect();
+    
+    try {
+      if (!this.contracts.microLending) {
+        throw new Error("MicroLending contract not initialized");
+      }
+      
+      // First calculate how much needs to be repaid
+      const repaymentAmount = await this.contracts.microLending.calculateRepaymentAmount(loanId);
+      console.log(`Repayment amount for loan ${loanId}: ${ethers.formatEther(repaymentAmount)} tokens`);
+      
+      // Approve transfer of tokens to the contract
+      const lendingContractAddress = await this.contracts.microLending.getAddress();
+      const approveTx = await this.contracts.testToken.approve(lendingContractAddress, repaymentAmount);
+      await approveTx.wait();
+      console.log("Token approval confirmed for repayment");
+      
+      // Now repay the loan
+      const tx = await this.contracts.microLending.repayLoan(loanId);
+      
+      console.log("Repay loan transaction submitted:", tx.hash);
+      const receipt = await tx.wait();
+      console.log("Loan repaid in block:", receipt.blockNumber);
+      
+      return receipt;
+    } catch (error) {
+      console.error("Error repaying loan:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check status of a specific loan
+   */
+  async checkLoanStatus(loanId) {
+    await this.ensureInitializedOrReconnect();
+    
+    try {
+      if (!this.contracts.microLending) {
+        throw new Error("MicroLending contract not initialized");
+      }
+      
+      const loan = await this.contracts.microLending.loans(loanId);
+      
+      return {
+        amount: ethers.formatEther(loan.amount),
+        interestRate: Number(loan.interestRate) / 100, // Convert from basis points to percentage
+        duration: Number(loan.duration) / (24 * 60 * 60), // Convert from seconds to days
+        startTime: Number(loan.startTime) * 1000, // Convert to JS timestamp
+        borrower: loan.borrower,
+        lender: loan.lender,
+        active: loan.active,
+        repaid: loan.repaid
+      };
+    } catch (error) {
+      console.error("Error checking loan status:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific loan by ID
+   */
+  async getLoan(loanId) {
+    await this.ensureInitializedOrReconnect();
+    
+    try {
+      if (!this.contracts.microLending) {
+        throw new Error("MicroLending contract not initialized");
+      }
+      
+      const loan = await this.contracts.microLending.loans(loanId);
+      
+      return {
+        amount: ethers.formatEther(loan.amount),
+        interestRate: Number(loan.interestRate) / 100, // Convert from basis points to percentage
+        duration: Number(loan.duration) / (24 * 60 * 60), // Convert from seconds to days
+        startTime: Number(loan.startTime) * 1000, // Convert to JS timestamp
+        borrower: loan.borrower,
+        lender: loan.lender,
+        active: loan.active,
+        repaid: loan.repaid
+      };
+    } catch (error) {
+      console.error("Error getting loan:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get credit score for the current user
+   */
+  async getCreditScore() {
+    await this.ensureInitializedOrReconnect();
+    
+    try {
+      if (!this.contracts.microLending) {
+        throw new Error("MicroLending contract not initialized");
+      }
+      
+      const userAddress = await this.signer.getAddress();
+      const score = await this.contracts.microLending.getCreditScore(userAddress);
+      return Number(score);
+    } catch (error) {
+      console.error("Error getting credit score:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Cancel a loan (only available for lender of an active, not-yet-taken loan)
+   */
+  async cancelLoan(loanId) {
+    // This would require a custom function in your smart contract
+    // For now, let's just throw an error
+    throw new Error("Loan cancellation not implemented in smart contract");
   }
 }
 
