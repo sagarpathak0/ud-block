@@ -21,7 +21,20 @@ function BudgetDashboard() {
       setLoading(true);
       setError('');
       
+      // Debug info
+      console.log("Contract service:", contractService);
+      console.log("Available methods:", Object.keys(contractService));
+      console.log("Budget manager contract:", contractService.contracts?.budgetManager);
+      
+      // Check if needed methods exist
+      if (!contractService.getBudgets) {
+        console.error("getBudgets method is not available");
+        setError("Contract service is not properly initialized. Please refresh the page.");
+        return;
+      }
+      
       const budgetList = await contractService.getBudgets();
+      console.log("Loaded budgets:", budgetList);
       setBudgets(budgetList);
     } catch (error) {
       console.error('Failed to load budgets:', error);
@@ -33,8 +46,10 @@ function BudgetDashboard() {
 
   // Load budgets on component mount and when refresh is triggered
   useEffect(() => {
-    loadBudgets();
-  }, [loadBudgets, refreshTrigger]);
+    if (contractService) {
+      loadBudgets();
+    }
+  }, [loadBudgets, refreshTrigger, contractService]);
 
   // Create new budget
   const handleCreateBudget = async () => {
