@@ -609,7 +609,7 @@ function FraudAnalytics({ contractService }) {
                         {new Date(alert.timestamp).toLocaleString()}
                       </Typography>
                       <Typography variant="body2" sx={{ mt: 1 }}>
-                        Related transaction: {alert.relatedTx}
+                        Related transactions: {alert.relatedTx}
                       </Typography>
                       {alert.status === 'active' && (
                         <Box sx={{ mt: 2 }}>
