@@ -5,7 +5,6 @@ import {
 } from '@mui/material';
 import WalletConnect from './components/WalletConnect';
 import BudgetDashboard from './components/BudgetDashboard';
-import MicroLending from './components/MicroLending';
 import MicroInvestor from './components/MicroInvestor';
 
 // Create a theme
@@ -63,12 +62,10 @@ function App() {
                 scrollButtons="auto"
               >
                 <Tab label="Budget Dashboard" />
-                <Tab label="Micro Lending" />
                 <Tab label="Micro Investing" />
               </Tabs>
               
               {tabValue === 0 && <BudgetDashboard />}
-              {tabValue === 1 && <MicroLending />}
               {tabValue === 2 && <MicroInvestor />}
             </>
           )}

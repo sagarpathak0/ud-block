@@ -17,17 +17,15 @@ import { ContractService } from "./services/contractService";
 import WalletConnect from "./components/WalletConnect";
 import BudgetDashboard from "./components/BudgetDashboard";
 import MicroInvestmentPortal from "./components/MicroInvestmentPortal";
+import FraudAnalytics from "./components/FraudAnalytics";
 import InclusiveBanking from "./components/InclusiveBanking";
 import cyberpunkTheme from "./theme/cyberpunkTheme";
 
 // Replace these with your actual deployed contract addresses
 const CONTRACT_ADDRESSES = {
-  budgetManager: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-  microInvestor: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-  testToken: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-  microLending: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
-  communitySavings: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
-  financialEducation: "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+  budgetManager: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
+microInvestor: "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
+testToken: "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
 };
 
 function App() {
@@ -207,6 +205,7 @@ function App() {
                   >
                     <Tab label="Budget Dashboard" />
                     <Tab label="Micro Investments" />
+                    <Tab label="Fraud Analytics" />
                     <Tab label="Inclusive Banking" />
                   </Tabs>
                 </Box>
@@ -225,6 +224,12 @@ function App() {
                 )}
 
                 {tabValue === 2 && (
+                  <Box sx={{ py: 3, animation: "fadeIn 0.5s ease-out" }}>
+                    <FraudAnalytics contractService={contractService} />
+                  </Box>
+                )}
+
+                {tabValue === 3 && (
                   <Box sx={{ py: 3, animation: "fadeIn 0.5s ease-out" }}>
                     <InclusiveBanking contractService={contractService} />
                   </Box>
