@@ -87,6 +87,82 @@ export class ContractService {
   }
 
   /**
+   * Dynamically load contract addresses from local deployments if not found
+   */
+  async loadContractAddresses() {
+    const addresses = { ...ADDRESSES };
+    let addressesUpdated = false;
+    
+    // Check if we have valid addresses
+    for (const [key, address] of Object.entries(addresses)) {
+      if (!address || address === '0x0000000000000000000000000000000000000000') {
+        console.warn(`Missing address for ${key}, attempting to load from deployed contracts`);
+        
+        try {
+          // Try to fetch from deployments/addresses.json
+          const response = await fetch('/deployments/addresses.json');
+          if (response.ok) {
+            const deployedAddresses = await response.json();
+            if (deployedAddresses[key]) {
+              addresses[key] = deployedAddresses[key];
+              addressesUpdated = true;
+              console.log(`Loaded ${key} address from deployments: ${addresses[key]}`);
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to load deployed address for ${key}:`, error.message);
+        }
+      }
+    }
+    
+    // If we updated addresses, reinitialize contracts
+    if (addressesUpdated && this.signer) {
+      console.log("Reinitializing contracts with updated addresses");
+      this.initializeContracts(addresses);
+    }
+    
+    return addresses;
+  }
+
+  /**
+   * Initialize contract instances with provided addresses
+   */
+  initializeContracts(addresses) {
+    try {
+      this.contracts = {
+        budgetManager: new ethers.Contract(
+          addresses.budgetManager,
+          BudgetManagerABI.abi,
+          this.signer
+        ),
+        
+        microInvestor: new ethers.Contract(
+          addresses.microInvestor,
+          MicroInvestorABI.abi,
+          this.signer
+        ),
+        
+        testToken: new ethers.Contract(
+          addresses.testToken,
+          TestTokenABI.abi,
+          this.signer
+        )
+      };
+      
+      console.log("Contracts initialized with addresses:", {
+        budgetManager: addresses.budgetManager,
+        microInvestor: addresses.microInvestor,
+        testToken: addresses.testToken
+      });
+      
+      return true;
+    } catch (error) {
+      console.error("Failed to initialize contracts:", error);
+      return false;
+    }
+  }
+
+  /**
    * Ensure the service is initialized before performing operations
    */
   ensureInitialized() {
@@ -125,79 +201,161 @@ export class ContractService {
   }
 
   /**
+   * Ensure the user is on the correct network
+   */
+  async ensureCorrectNetwork() {
+    if (!window.ethereum) return false;
+    
+    try {
+      // Get current chain ID
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const network = await provider.getNetwork();
+      const currentChainId = network.chainId;
+      
+      // Expected chain ID from env or default to Hardhat's chain ID (1337)
+      const expectedChainId = parseInt(process.env.REACT_APP_NETWORK_ID || "1337");
+      
+      // If already on correct network
+      if (currentChainId === expectedChainId) {
+        return true;
+      }
+      
+      // Request network switch for MetaMask
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${expectedChainId.toString(16)}` }],
+        });
+        return true;
+      } catch (switchError) {
+        // This error code indicates the chain has not been added to MetaMask
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: `0x${expectedChainId.toString(16)}`,
+                chainName: process.env.REACT_APP_NETWORK_NAME || 'Hardhat Network',
+                rpcUrls: ['http://localhost:8545'],
+                nativeCurrency: {
+                  name: 'Ethereum',
+                  symbol: 'ETH',
+                  decimals: 18
+                },
+              },
+            ],
+          });
+          return true;
+        }
+        throw switchError;
+      }
+    } catch (error) {
+      console.error('Failed to switch network:', error);
+      return false;
+    }
+  }
+
+  /**
    * Budget Manager methods
    */
   
   // Get all budgets for the current user
   async getBudgets() {
     this.ensureInitialized();
-  
+    
+    const contractExists = await this.verifyContractExists('budgetManager');
+    if (!contractExists) {
+      console.error("Budget Manager contract not deployed at the specified address");
+      return [];
+    }
+    
     try {
+      console.log('Budget manager contract:', this.contracts.budgetManager);
       const userAddress = await this.signer.getAddress();
       console.log('Getting budgets for:', userAddress);
       
-      // First, get the actual count directly from the contract
-      let budgetCount = 0;
-      try {
-        const count = await this.contracts.budgetManager.userBudgetCount(userAddress);
-        budgetCount = Number(count);
-        console.log(`User has ${budgetCount} budgets according to userBudgetCount`);
-      } catch (error) {
-        console.error('Error getting budget count:', error);
-        // If we can't get the count, we'll set a fallback
-        budgetCount = 5;
+      // Debug contract interface
+      if (this.contracts.budgetManager && this.contracts.budgetManager.interface) {
+        console.log('Available functions:', 
+          this.contracts.budgetManager.interface.fragments
+            .filter(f => f.type === 'function')
+            .map(f => f.name)
+        );
       }
       
-      if (budgetCount === 0) {
-        console.log('No budgets found for user');
-        return [];
-      }
-      
+      // Try multiple ways to get budgets
       let budgets = [];
       
-      // Fetch each budget using its index
-      for (let i = 0; i < budgetCount; i++) {
-        try {
-          console.log(`Fetching budget at index ${i}`);
-          const budgetData = await this.contracts.budgetManager.getBudget(i);
-          
-          // Log the raw data for debugging
-          console.log(`Raw budget data for index ${i}:`, budgetData);
-          
-          // Important: getBudget returns (limit, spent, lastReset, category)
-          // The order matters! In Solidity it's defined this way
-          const limit = budgetData[0];
-          const spent = budgetData[1];
-          const lastReset = budgetData[2];
-          const category = budgetData[3];
-          
-          console.log(`Budget ${i} parsed:`, { 
-            category, 
-            limit: ethers.formatEther(limit),
-            spent: ethers.formatEther(spent) 
-          });
-          
-          // Only add if it's a valid budget with a non-empty category
-          if (category && category.trim() !== "") {
-            budgets.push({
-              id: i,
-              category: category,
-              limit: ethers.formatEther(limit),
-              spent: ethers.formatEther(spent),
-              lastReset: new Date(Number(lastReset) * 1000)
-            });
-            console.log(`Added budget ${i}: ${category}`);
-          } else {
-            console.log(`Skipping budget ${i} - empty category`);
+      // Approach 1: Try to get budget count
+      try {
+        // Try various budget count functions
+        let budgetCount = 0;
+        const availableMethods = ['userBudgetCount', 'getBudgetCount', 'budgetCount'];
+        
+        for (const method of availableMethods) {
+          try {
+            if (typeof this.contracts.budgetManager[method] === 'function') {
+              const count = method === 'userBudgetCount' 
+                ? await this.contracts.budgetManager[method](userAddress) 
+                : await this.contracts.budgetManager[method]();
+              
+              budgetCount = Number(count);
+              console.log(`Found budget count (${budgetCount}) using method: ${method}`);
+              break;
+            }
+          } catch (e) {
+            console.log(`Method ${method} not available or failed`);
           }
-        } catch (error) {
-          console.log(`Error fetching budget at index ${i}:`, error.message);
-          // If we get an error, this budget index might not exist
-          // Continue to the next index rather than breaking the loop
         }
+        
+        // If we have a count, try to fetch budgets
+        if (budgetCount > 0) {
+          for (let i = 0; i < budgetCount; i++) {
+            try {
+              let budget;
+              // Try different ways to get budget data
+              try {
+                budget = await this.contracts.budgetManager.getBudget(i);
+              } catch (e) {
+                try {
+                  budget = await this.contracts.budgetManager.budgets(i);
+                } catch (e2) {
+                  console.log(`Cannot get budget at index ${i}`);
+                  continue;
+                }
+              }
+              
+              // Try to parse budget data in different formats
+              const budgetObj = {
+                id: i,
+                category: 'Unknown',
+                limit: '0',
+                spent: '0',
+                lastReset: new Date()
+              };
+              
+              if (Array.isArray(budget)) {
+                budgetObj.limit = ethers.formatEther(budget[0] || 0);
+                budgetObj.spent = ethers.formatEther(budget[1] || 0);
+                budgetObj.lastReset = new Date(Number(budget[2] || 0) * 1000);
+                budgetObj.category = budget[3] || `Budget ${i+1}`;
+              } else if (typeof budget === 'object') {
+                budgetObj.limit = ethers.formatEther(budget.limit || 0);
+                budgetObj.spent = ethers.formatEther(budget.spent || 0);
+                budgetObj.lastReset = new Date(Number(budget.lastReset || 0) * 1000);
+                budgetObj.category = budget.category || `Budget ${i+1}`;
+              }
+              
+              budgets.push(budgetObj);
+            } catch (error) {
+              console.log(`Error processing budget ${i}:`, error.message);
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Approach 1 failed:', error.message);
       }
       
-      console.log(`Successfully retrieved ${budgets.length} valid budgets`);
       return budgets;
     } catch (error) {
       console.error('Error in getBudgets:', error);
@@ -634,6 +792,28 @@ export class ContractService {
     } catch (error) {
       console.error("Error getting loan constraints:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Verify if a contract exists on the blockchain
+   */
+  async verifyContractExists(contractName) {
+    if (!this.provider || !this.contracts[contractName]) return false;
+    
+    try {
+      const address = this.contracts[contractName].target;
+      const code = await this.provider.getCode(address);
+      const exists = code !== "0x";
+      
+      if (!exists) {
+        console.error(`Contract ${contractName} at ${address} has no bytecode`);
+      }
+      
+      return exists;
+    } catch (error) {
+      console.error(`Error verifying ${contractName} contract:`, error);
+      return false;
     }
   }
 }

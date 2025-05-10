@@ -21,12 +21,29 @@ import FraudAnalytics from "./components/FraudAnalytics";
 import InclusiveBanking from "./components/InclusiveBanking";
 import cyberpunkTheme from "./theme/cyberpunkTheme";
 
-// Replace these with your actual deployed contract addresses
 const CONTRACT_ADDRESSES = {
-  budgetManager: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
-microInvestor: "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
-testToken: "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
+  budgetManager: process.env.REACT_APP_BUDGET_MANAGER_ADDRESS,
+  microInvestor: process.env.REACT_APP_MICRO_INVESTOR_ADDRESS,
+  testToken: process.env.REACT_APP_TEST_TOKEN_ADDRESS
 };
+
+// Debug the addresses being used
+console.log("Using contract addresses:", CONTRACT_ADDRESSES);
+
+// Add fallback addresses for local development when not defined
+if (!CONTRACT_ADDRESSES.budgetManager) {
+  console.warn("Contract addresses not found in environment variables. Using defaults for local development.");
+  
+  // Try to load from deployments file if it exists
+  try {
+    const deployedAddresses = require('../../../deployments/addresses.json');
+    Object.keys(CONTRACT_ADDRESSES).forEach(key => {
+      CONTRACT_ADDRESSES[key] = deployedAddresses[key] || CONTRACT_ADDRESSES[key];
+    });
+  } catch (error) {
+    console.warn("Could not load deployed addresses:", error.message);
+  }
+}
 
 function App() {
   const [contractService, setContractService] = useState(null);
